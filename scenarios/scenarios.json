@@ -1,0 +1,38 @@
+[
+  {
+    "name": "return-basic",
+    "input": {
+      "date_start": "2026-01-01",
+      "date_end": "2026-03-31",
+      "profit_loss_ptd": 50000.0,
+      "profit_loss_ytd": 150000.0,
+      "fees_ptd": 5000.0,
+      "nav_begin": 1000000.0,
+      "nav_end": 1050000.0,
+      "subscriptions": 20000.0,
+      "redemptions": 10000.0
+    },
+    "expected": [
+      0.04955,
+      0.03609
+    ]
+  },
+  {
+    "name": "return-mtd-under-hwm",
+    "input": {
+      "date_start": "2026-03-01",
+      "date_end": "2026-03-31",
+      "profit_loss_ptd": -50000.0,
+      "profit_loss_ytd": 500.0,
+      "fees_ptd": 4000.0,
+      "nav_begin": 1000000.0,
+      "nav_end": 1050000.0,
+      "subscriptions": 20000.0,
+      "redemptions": 10000.0
+    },
+    "expected": [
+      -0.04554,
+      -0.03774
+    ]
+  }
+]

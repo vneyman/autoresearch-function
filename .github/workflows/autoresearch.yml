@@ -1,0 +1,61 @@
+name: autoresearch
+
+on:
+  workflow_dispatch:
+    inputs:
+      description:
+        description: Short run description
+        required: false
+        default: github-actions run
+      rollback:
+        description: Roll back the last commit on discard/crash
+        required: false
+        default: "false"
+  schedule:
+    - cron: "0 */6 * * *"
+
+jobs:
+  experiment:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest
+
+      - name: Run experiment
+        env:
+          RUN_DESCRIPTION: ${{ github.event.inputs.description || 'github-actions scheduled run' }}
+          ROLLBACK: ${{ github.event.inputs.rollback || 'false' }}
+        run: |
+          if [ "$ROLLBACK" = "true" ]; then
+            python scripts/run_experiment.py --description "$RUN_DESCRIPTION" --rollback
+          else
+            python scripts/run_experiment.py --description "$RUN_DESCRIPTION"
+          fi
+
+      - name: Show status
+        run: python scripts/status.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: autoresearch-results
+          path: |
+            benchmark-summary.json
+            .autoresearch/engineering/portfolio-return/results.tsv
+            .autoresearch/engineering/portfolio-return/run.log

@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+benchmark-summary.json
+.autoresearch/**/run.log
+.autoresearch/**/results.tsv

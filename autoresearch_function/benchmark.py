@@ -1,0 +1,243 @@
+from __future__ import annotations
+
+import json
+import math
+import statistics
+import time
+import tracemalloc
+import inspect
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable
+
+
+@dataclass(frozen=True)
+class Scenario:
+    name: str
+    input: Any
+    expected: Any
+
+
+@dataclass(frozen=True)
+class BenchmarkConfig:
+    tolerance: float
+    warmup_runs: int
+    timed_runs: int
+    concurrency_workers: int
+    concurrency_repeats: int
+    score_weights: dict[str, float]
+    score_targets: dict[str, float]
+
+
+@dataclass(frozen=True)
+class BenchmarkResult:
+    correctness: float
+    median_latency_ms: float
+    peak_memory_kb: float
+    concurrency_ops_per_s: float
+    production_readiness: float
+    overall_score: float
+    scenarios_passed: int
+    scenario_count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "correctness": self.correctness,
+            "median_latency_ms": self.median_latency_ms,
+            "peak_memory_kb": self.peak_memory_kb,
+            "concurrency_ops_per_s": self.concurrency_ops_per_s,
+            "production_readiness": self.production_readiness,
+            "overall_score": self.overall_score,
+            "scenarios_passed": self.scenarios_passed,
+            "scenario_count": self.scenario_count,
+        }
+
+
+def load_scenarios(path: str | Path) -> list[Scenario]:
+    raw = json.loads(Path(path).read_text())
+    return [Scenario(**item) for item in raw]
+
+
+def load_config(path: str | Path) -> BenchmarkConfig:
+    raw = json.loads(Path(path).read_text())
+    return BenchmarkConfig(
+        tolerance=float(raw["correctness"]["tolerance"]),
+        warmup_runs=int(raw["benchmark"]["warmup_runs"]),
+        timed_runs=int(raw["benchmark"]["timed_runs"]),
+        concurrency_workers=int(raw["benchmark"]["concurrency_workers"]),
+        concurrency_repeats=int(raw["benchmark"]["concurrency_repeats"]),
+        score_weights=dict(raw["score"]["weights"]),
+        score_targets=dict(raw["score"]["targets"]),
+    )
+
+
+def compare_outputs(actual: Any, expected: Any, tolerance: float) -> bool:
+    if isinstance(actual, (int, float)) and isinstance(expected, (int, float)):
+        return math.isclose(float(actual), float(expected), rel_tol=tolerance, abs_tol=tolerance)
+    if isinstance(actual, (list, tuple)) and isinstance(expected, (list, tuple)):
+        if len(actual) != len(expected):
+            return False
+        return all(compare_outputs(a, e, tolerance) for a, e in zip(actual, expected))
+    if isinstance(actual, dict) and isinstance(expected, dict):
+        if actual.keys() != expected.keys():
+            return False
+        return all(compare_outputs(actual[key], expected[key], tolerance) for key in actual)
+    return actual == expected
+
+
+def evaluate_correctness(
+    func: Callable[[Any], Any],
+    scenarios: list[Scenario],
+    tolerance: float,
+) -> tuple[float, int]:
+    passed = 0
+    for scenario in scenarios:
+        actual = func(scenario.input)
+        if compare_outputs(actual, scenario.expected, tolerance):
+            passed += 1
+    return passed / len(scenarios), passed
+
+
+def measure_latency_ms(
+    func: Callable[[Any], Any],
+    scenarios: list[Scenario],
+    warmup_runs: int,
+    timed_runs: int,
+) -> float:
+    timings_ms: list[float] = []
+    for scenario in scenarios:
+        for _ in range(warmup_runs):
+            func(scenario.input)
+        for _ in range(timed_runs):
+            start = time.perf_counter()
+            func(scenario.input)
+            end = time.perf_counter()
+            timings_ms.append((end - start) * 1000.0)
+    return statistics.median(timings_ms)
+
+
+def measure_peak_memory_kb(
+    func: Callable[[Any], Any],
+    scenarios: list[Scenario],
+) -> float:
+    peak_bytes = 0
+    for scenario in scenarios:
+        tracemalloc.start()
+        try:
+            func(scenario.input)
+            _, peak = tracemalloc.get_traced_memory()
+            peak_bytes = max(peak_bytes, peak)
+        finally:
+            tracemalloc.stop()
+    return peak_bytes / 1024.0
+
+
+def measure_concurrency_ops_per_s(
+    func: Callable[[Any], Any],
+    scenarios: list[Scenario],
+    workers: int,
+    repeats: int,
+) -> float:
+    calls = [scenario.input for scenario in scenarios] * repeats
+    start = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(func, payload) for payload in calls]
+        for future in futures:
+            future.result()
+    end = time.perf_counter()
+    elapsed = end - start
+    if elapsed <= 0:
+        return float("inf")
+    return len(calls) / elapsed
+
+
+def evaluate_production_readiness(func: Callable[[Any], Any]) -> float:
+    score = 0.0
+
+    if func.__doc__ and func.__doc__.strip():
+        score += 0.25
+
+    annotations = getattr(func, "__annotations__", {})
+    if "return" in annotations:
+        score += 0.15
+    if annotations:
+        score += 0.15
+
+    signature = inspect.signature(func)
+    parameters = list(signature.parameters.values())
+    if parameters and all(param.annotation is not inspect._empty for param in parameters):
+        score += 0.15
+
+    try:
+        source = inspect.getsource(func)
+    except (OSError, TypeError):
+        source = ""
+
+    lowered = source.lower()
+    if "todo" not in lowered and "fixme" not in lowered:
+        score += 0.15
+
+    if "raise " in source or "ValueError" in source or "TypeError" in source:
+        score += 0.15
+
+    return min(1.0, score)
+
+
+def compute_overall_score(
+    correctness: float,
+    latency_ms: float,
+    memory_kb: float,
+    concurrency_ops_per_s: float,
+    production_readiness: float,
+    weights: dict[str, float],
+    targets: dict[str, float],
+) -> float:
+    latency_score = min(1.0, targets["latency_ms"] / max(latency_ms, 1e-9))
+    memory_score = min(1.0, targets["memory_kb"] / max(memory_kb, 1e-9))
+    concurrency_score = min(1.0, concurrency_ops_per_s / max(targets["concurrency_ops_per_s"], 1e-9))
+
+    score = (
+        weights["correctness"] * correctness
+        + weights["latency"] * latency_score
+        + weights["memory"] * memory_score
+        + weights["concurrency"] * concurrency_score
+        + weights["production_readiness"] * production_readiness
+    )
+    return max(0.0, min(1.0, score))
+
+
+def run_benchmark(
+    func: Callable[[Any], Any],
+    scenarios: list[Scenario],
+    config: BenchmarkConfig,
+) -> BenchmarkResult:
+    correctness, passed = evaluate_correctness(func, scenarios, config.tolerance)
+    latency_ms = measure_latency_ms(func, scenarios, config.warmup_runs, config.timed_runs)
+    memory_kb = measure_peak_memory_kb(func, scenarios)
+    concurrency_ops_per_s = measure_concurrency_ops_per_s(
+        func,
+        scenarios,
+        config.concurrency_workers,
+        config.concurrency_repeats,
+    )
+    production_readiness = evaluate_production_readiness(func)
+    overall_score = compute_overall_score(
+        correctness,
+        latency_ms,
+        memory_kb,
+        concurrency_ops_per_s,
+        production_readiness,
+        config.score_weights,
+        config.score_targets,
+    )
+    return BenchmarkResult(
+        correctness=correctness,
+        median_latency_ms=latency_ms,
+        peak_memory_kb=memory_kb,
+        concurrency_ops_per_s=concurrency_ops_per_s,
+        production_readiness=production_readiness,
+        overall_score=overall_score,
+        scenarios_passed=passed,
+        scenario_count=len(scenarios),
+    )

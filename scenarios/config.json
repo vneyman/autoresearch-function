@@ -1,0 +1,25 @@
+{
+  "correctness": {
+    "tolerance": 1e-9
+  },
+  "benchmark": {
+    "warmup_runs": 10,
+    "timed_runs": 100,
+    "concurrency_workers": 4,
+    "concurrency_repeats": 200
+  },
+  "score": {
+    "weights": {
+      "correctness": 0.45,
+      "latency": 0.18,
+      "memory": 0.08,
+      "concurrency": 0.14,
+      "production_readiness": 0.15
+    },
+    "targets": {
+      "latency_ms": 0.05,
+      "memory_kb": 16.0,
+      "concurrency_ops_per_s": 10000.0
+    }
+  }
+}
