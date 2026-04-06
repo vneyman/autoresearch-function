@@ -1,6 +1,12 @@
 import json
 
-from autoresearch_function.benchmark import compare_outputs, load_config, load_scenarios, run_benchmark
+from autoresearch_function.benchmark import (
+    compare_outputs,
+    evaluate_error_handling,
+    load_config,
+    load_scenarios,
+    run_benchmark,
+)
 
 
 def sample_candidate(payload):
@@ -14,10 +20,30 @@ def sample_candidate(payload):
     raise ValueError(f"unsupported operation: {operation}")
 
 
+def readiness_candidate(payload):
+    if payload["mode"] == "error":
+        raise ValueError("forced")
+    return payload["value"]
+
+
 def test_compare_outputs_supports_tolerance() -> None:
     assert compare_outputs(1.0000001, 1.0, 1e-6)
     assert not compare_outputs(1.01, 1.0, 1e-6)
     assert compare_outputs([1.0000001, 2.0], [1.0, 2.0], 1e-6)
+
+
+def test_error_handling_uses_readiness_scenarios(tmp_path) -> None:
+    scenarios_path = tmp_path / "readiness.json"
+    scenarios_path.write_text(
+        json.dumps(
+            [
+                {"name": "ok", "kind": "readiness", "input": {"mode": "ok", "value": 1}, "expect_error": None},
+                {"name": "err", "kind": "readiness", "input": {"mode": "error", "value": 1}, "expect_error": "ValueError"},
+            ]
+        )
+    )
+    scenarios = load_scenarios(scenarios_path)
+    assert evaluate_error_handling(readiness_candidate, scenarios) == 1.0
 
 
 def test_runner_metrics_for_sample_function(tmp_path) -> None:
@@ -77,4 +103,4 @@ def test_runner_metrics_for_sample_function(tmp_path) -> None:
     assert result.peak_memory_kb >= 0.0
     assert result.concurrency_ops_per_s > 0.0
     assert 0.0 <= result.production_readiness <= 1.0
-    assert 0.0 <= result.overall_score <= 1.0
+    assert result.overall_score > 0.0

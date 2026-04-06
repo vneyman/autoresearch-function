@@ -16,7 +16,9 @@ from typing import Any, Callable
 class Scenario:
     name: str
     input: Any
-    expected: Any
+    expected: Any | None = None
+    expect_error: str | None = None
+    kind: str = "correctness"
 
 
 @dataclass(frozen=True)
@@ -86,11 +88,20 @@ def compare_outputs(actual: Any, expected: Any, tolerance: float) -> bool:
     return actual == expected
 
 
+def split_scenarios(scenarios: list[Scenario]) -> tuple[list[Scenario], list[Scenario]]:
+    correctness_scenarios = [scenario for scenario in scenarios if scenario.kind != "readiness"]
+    readiness_scenarios = [scenario for scenario in scenarios if scenario.kind == "readiness"]
+    return correctness_scenarios, readiness_scenarios
+
+
 def evaluate_correctness(
     func: Callable[[Any], Any],
     scenarios: list[Scenario],
     tolerance: float,
 ) -> tuple[float, int]:
+    if not scenarios:
+        return 1.0, 0
+
     passed = 0
     for scenario in scenarios:
         actual = func(scenario.input)
@@ -105,6 +116,9 @@ def measure_latency_ms(
     warmup_runs: int,
     timed_runs: int,
 ) -> float:
+    if not scenarios:
+        return 0.0
+
     timings_ms: list[float] = []
     for scenario in scenarios:
         for _ in range(warmup_runs):
@@ -121,6 +135,9 @@ def measure_peak_memory_kb(
     func: Callable[[Any], Any],
     scenarios: list[Scenario],
 ) -> float:
+    if not scenarios:
+        return 0.0
+
     peak_bytes = 0
     for scenario in scenarios:
         tracemalloc.start()
@@ -139,6 +156,9 @@ def measure_concurrency_ops_per_s(
     workers: int,
     repeats: int,
 ) -> float:
+    if not scenarios:
+        return 0.0
+
     calls = [scenario.input for scenario in scenarios] * repeats
     start = time.perf_counter()
     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -152,7 +172,7 @@ def measure_concurrency_ops_per_s(
     return len(calls) / elapsed
 
 
-def evaluate_production_readiness(func: Callable[[Any], Any]) -> float:
+def evaluate_static_readiness(func: Callable[[Any], Any]) -> float:
     score = 0.0
 
     if func.__doc__ and func.__doc__.strip():
@@ -184,6 +204,35 @@ def evaluate_production_readiness(func: Callable[[Any], Any]) -> float:
     return min(1.0, score)
 
 
+def evaluate_error_handling(
+    func: Callable[[Any], Any],
+    scenarios: list[Scenario],
+) -> float:
+    if not scenarios:
+        return 1.0
+
+    passed = 0
+    for scenario in scenarios:
+        try:
+            func(scenario.input)
+        except Exception as exc:  # noqa: BLE001
+            if scenario.expect_error and exc.__class__.__name__ == scenario.expect_error:
+                passed += 1
+        else:
+            if not scenario.expect_error:
+                passed += 1
+    return passed / len(scenarios)
+
+
+def evaluate_production_readiness(
+    func: Callable[[Any], Any],
+    readiness_scenarios: list[Scenario],
+) -> float:
+    static_readiness = evaluate_static_readiness(func)
+    error_handling = evaluate_error_handling(func, readiness_scenarios)
+    return (static_readiness + error_handling) / 2.0
+
+
 def compute_overall_score(
     correctness: float,
     latency_ms: float,
@@ -193,9 +242,9 @@ def compute_overall_score(
     weights: dict[str, float],
     targets: dict[str, float],
 ) -> float:
-    latency_score = min(1.0, targets["latency_ms"] / max(latency_ms, 1e-9))
-    memory_score = min(1.0, targets["memory_kb"] / max(memory_kb, 1e-9))
-    concurrency_score = min(1.0, concurrency_ops_per_s / max(targets["concurrency_ops_per_s"], 1e-9))
+    latency_score = targets["latency_ms"] / max(latency_ms, 1e-9)
+    memory_score = targets["memory_kb"] / max(memory_kb, 1e-9)
+    concurrency_score = concurrency_ops_per_s / max(targets["concurrency_ops_per_s"], 1e-9)
 
     score = (
         weights["correctness"] * correctness
@@ -204,7 +253,7 @@ def compute_overall_score(
         + weights["concurrency"] * concurrency_score
         + weights["production_readiness"] * production_readiness
     )
-    return max(0.0, min(1.0, score))
+    return max(0.0, score)
 
 
 def run_benchmark(
@@ -212,16 +261,17 @@ def run_benchmark(
     scenarios: list[Scenario],
     config: BenchmarkConfig,
 ) -> BenchmarkResult:
-    correctness, passed = evaluate_correctness(func, scenarios, config.tolerance)
-    latency_ms = measure_latency_ms(func, scenarios, config.warmup_runs, config.timed_runs)
-    memory_kb = measure_peak_memory_kb(func, scenarios)
+    correctness_scenarios, readiness_scenarios = split_scenarios(scenarios)
+    correctness, passed = evaluate_correctness(func, correctness_scenarios, config.tolerance)
+    latency_ms = measure_latency_ms(func, correctness_scenarios, config.warmup_runs, config.timed_runs)
+    memory_kb = measure_peak_memory_kb(func, correctness_scenarios)
     concurrency_ops_per_s = measure_concurrency_ops_per_s(
         func,
-        scenarios,
+        correctness_scenarios,
         config.concurrency_workers,
         config.concurrency_repeats,
     )
-    production_readiness = evaluate_production_readiness(func)
+    production_readiness = evaluate_production_readiness(func, readiness_scenarios)
     overall_score = compute_overall_score(
         correctness,
         latency_ms,
@@ -239,5 +289,5 @@ def run_benchmark(
         production_readiness=production_readiness,
         overall_score=overall_score,
         scenarios_passed=passed,
-        scenario_count=len(scenarios),
+        scenario_count=len(correctness_scenarios),
     )

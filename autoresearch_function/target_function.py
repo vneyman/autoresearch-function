@@ -30,7 +30,7 @@ def candidate_portfolio_return_gross_net(
 ) -> tuple[float, float]:
     """Calculates the gross and net returns for a portfolio over a specific period.
 
-    This function adjusts the NAV denominator based on the start year and 
+    This function adjusts the NAV denominator based on the start year and
     accounts for management and performance fees to arrive at a net return.
 
     Args:
@@ -51,11 +51,11 @@ def candidate_portfolio_return_gross_net(
 
     Note:
     - management fees are calculated as a percentage of the ending NAV, pro-rated for the time period (number of months).
-    - performance fees are calculated as a percentage of the gross profit if the year-to-date profit is positive. 
-    - When year-to-date gross profit and loss after management fees is negative, the portfolio is considered under high water mark ("HWM"). 
+    - performance fees are calculated as a percentage of the gross profit if the year-to-date profit is positive.
+    - When year-to-date gross profit and loss after management fees is negative, the portfolio is considered under high water mark ("HWM").
     - Performance fees are only charged on profits above the high water mark, meaning that if the portfolio is in a loss position, no performance fees are charged until the losses are recovered and the portfolio returns to a profit position.
     - returns are either positive, negative, or zero, and rounded to 5 decimal places.
-    
+
     The current implementation follows the finance-shaped scenario contract in
     `scenarios/scenarios.json`. It is intentionally self-contained and CPU-only.
     """

@@ -34,5 +34,37 @@
       -0.04554,
       -0.03774
     ]
+  },
+  {
+    "name": "readiness-zero-denominator-pre-2025",
+    "kind": "readiness",
+    "input": {
+      "date_start": "2024-03-01",
+      "date_end": "2024-03-31",
+      "profit_loss_ptd": 1000.0,
+      "profit_loss_ytd": 1000.0,
+      "fees_ptd": 0.0,
+      "nav_begin": 0.0,
+      "nav_end": 1000.0,
+      "subscriptions": 0.0,
+      "redemptions": 0.0
+    },
+    "expect_error": "ValueError"
+  },
+  {
+    "name": "readiness-zero-denominator-2025-plus",
+    "kind": "readiness",
+    "input": {
+      "date_start": "2026-03-01",
+      "date_end": "2026-03-31",
+      "profit_loss_ptd": 0.0,
+      "profit_loss_ytd": 1000.0,
+      "fees_ptd": 0.0,
+      "nav_begin": 1000.0,
+      "nav_end": 0.0,
+      "subscriptions": 0.0,
+      "redemptions": 0.0
+    },
+    "expect_error": "ValueError"
   }
 ]
