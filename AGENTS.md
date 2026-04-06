@@ -8,6 +8,6 @@ The `autoresearch-function` project mimics the original `autoresearch` workflow 
 4. **Evaluate**: execute `python scripts/run_experiment.py --description "<what changed>"` (+`--rollback` if you commit the change and want the runner to revert losers). The script runs the benchmark, writes `benchmark-summary.json`, and logs the score.
 5. **Log**: inspect `.autoresearch/engineering/portfolio-return/results.tsv` for `keep`/`discard` history, and run `python scripts/status.py` or the GitHub Actions workflow (`.github/workflows/autoresearch.yml`) to visualize progress.
 6. **Iterate**: keep a change when overall_score improves (function still must pass correctness gate) and discard otherwise; the runner already handles `git reset` on failures when requested.
-7. **Automation**: the scheduled workflow triggers the same `scripts/run_experiment.py` for recurring CPU experiments; adjust the `description` input when you manually trigger it from GitHub.
+7. **Automation**: GitHub Actions (`.github/workflows/autoresearch.yml`) runs the same `scripts/run_experiment.py` loop for recurring CPU experiments. Use cadence options `5m`, `30m`, `1h`, `2h`, `daily`; default `max_iterations` is `5` and can be overridden in `workflow_dispatch` (or `AUTORESEARCH_MAX_ITERATIONS` for scheduled runs).
 
 Keep the function batch small, prioritize correctness, then latency/memory/concurrency, and treat the production readiness score as a tie-breaker.

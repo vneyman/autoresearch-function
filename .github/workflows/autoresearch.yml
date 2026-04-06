@@ -7,12 +7,31 @@ on:
         description: Short run description
         required: false
         default: github-actions run
+      cadence:
+        description: Iteration cadence
+        required: false
+        default: "5m"
+        type: choice
+        options:
+          - 5m
+          - 30m
+          - 1h
+          - 2h
+          - daily
+      max_iterations:
+        description: Max iterations per run
+        required: false
+        default: "5"
       rollback:
         description: Roll back the last commit on discard/crash
         required: false
         default: "false"
   schedule:
     - cron: "*/5 * * * *"
+    - cron: "*/30 * * * *"
+    - cron: "0 * * * *"
+    - cron: "0 */2 * * *"
+    - cron: "0 0 * * *"
 
 permissions:
   contents: write
@@ -47,14 +66,81 @@ jobs:
 
       - name: Run experiment
         env:
-          RUN_DESCRIPTION: ${{ github.event.inputs.description || 'github-actions scheduled run' }}
-          ROLLBACK: ${{ github.event.inputs.rollback || 'false' }}
+          RUN_DESCRIPTION_INPUT: ${{ github.event.inputs.description || '' }}
+          INPUT_CADENCE: ${{ github.event.inputs.cadence || '' }}
+          INPUT_MAX_ITERATIONS: ${{ github.event.inputs.max_iterations || '' }}
+          INPUT_ROLLBACK: ${{ github.event.inputs.rollback || '' }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SCHEDULE: ${{ github.event.schedule || '' }}
+          CONFIGURED_SCHEDULE_CADENCE: ${{ vars.AUTORESEARCH_SCHEDULE_CADENCE || '' }}
+          CONFIGURED_MAX_ITERATIONS: ${{ vars.AUTORESEARCH_MAX_ITERATIONS || '' }}
         run: |
-          if [ "$ROLLBACK" = "true" ]; then
-            .venv/bin/python scripts/run_experiment.py --description "$RUN_DESCRIPTION" --rollback
+          set -euo pipefail
+
+          schedule_to_cadence() {
+            case "$1" in
+              "*/5 * * * *") echo "5m" ;;
+              "*/30 * * * *") echo "30m" ;;
+              "0 * * * *") echo "1h" ;;
+              "0 */2 * * *") echo "2h" ;;
+              "0 0 * * *") echo "daily" ;;
+              *) echo "unknown" ;;
+            esac
+          }
+
+          cadence_to_sleep_seconds() {
+            case "$1" in
+              "5m") echo 300 ;;
+              "30m") echo 1800 ;;
+              "1h") echo 3600 ;;
+              "2h") echo 7200 ;;
+              "daily") echo 86400 ;;
+              *) echo 300 ;;
+            esac
+          }
+
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            SCHEDULED_CADENCE="$(schedule_to_cadence "$EVENT_SCHEDULE")"
+            ACTIVE_CADENCE="${CONFIGURED_SCHEDULE_CADENCE:-5m}"
+            if [ "$SCHEDULED_CADENCE" != "$ACTIVE_CADENCE" ]; then
+              echo "Skipping schedule '$EVENT_SCHEDULE' cadence='$SCHEDULED_CADENCE'; active cadence is '$ACTIVE_CADENCE'."
+              exit 0
+            fi
+            RUN_CADENCE="$SCHEDULED_CADENCE"
+            MAX_ITERATIONS="${CONFIGURED_MAX_ITERATIONS:-5}"
+            RUN_DESCRIPTION="${RUN_DESCRIPTION_INPUT:-github-actions scheduled run}"
+            ROLLBACK="${INPUT_ROLLBACK:-false}"
           else
-            .venv/bin/python scripts/run_experiment.py --description "$RUN_DESCRIPTION"
+            RUN_CADENCE="${INPUT_CADENCE:-5m}"
+            MAX_ITERATIONS="${INPUT_MAX_ITERATIONS:-5}"
+            RUN_DESCRIPTION="${RUN_DESCRIPTION_INPUT:-github-actions run}"
+            ROLLBACK="${INPUT_ROLLBACK:-false}"
           fi
+
+          if ! [[ "$MAX_ITERATIONS" =~ ^[0-9]+$ ]] || [ "$MAX_ITERATIONS" -lt 1 ]; then
+            echo "Invalid max_iterations: $MAX_ITERATIONS"
+            exit 2
+          fi
+
+          SLEEP_SECONDS="$(cadence_to_sleep_seconds "$RUN_CADENCE")"
+          echo "Running cadence=$RUN_CADENCE max_iterations=$MAX_ITERATIONS rollback=$ROLLBACK"
+
+          i=1
+          while [ "$i" -le "$MAX_ITERATIONS" ]; do
+            ITERATION_DESC="$RUN_DESCRIPTION [iteration $i/$MAX_ITERATIONS]"
+            echo "Starting iteration: $ITERATION_DESC"
+            if [ "$ROLLBACK" = "true" ]; then
+              .venv/bin/python scripts/run_experiment.py --description "$ITERATION_DESC" --rollback
+            else
+              .venv/bin/python scripts/run_experiment.py --description "$ITERATION_DESC"
+            fi
+
+            if [ "$i" -lt "$MAX_ITERATIONS" ]; then
+              echo "Sleeping $SLEEP_SECONDS seconds before next iteration."
+              sleep "$SLEEP_SECONDS"
+            fi
+            i=$((i + 1))
+          done
 
       - name: Show status
         run: .venv/bin/python scripts/status.py

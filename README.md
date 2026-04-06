@@ -61,7 +61,19 @@ The bundled example uses a simple calculator-style function because you said you
 
 ## GitHub Actions
 
-The workflow at `.github/workflows/benchmark.yml` runs on GitHub-hosted CPU runners and uploads the evaluation summary as an artifact.
+The workflow at `.github/workflows/autoresearch.yml` runs on GitHub-hosted CPU runners, executes measured experiment iterations, uploads evaluation artifacts, and commits `.autoresearch/.../results.tsv` and `.autoresearch/.../run.log` back to the repo.
+
+`workflow_dispatch` inputs:
+
+- `cadence`: `5m`, `30m`, `1h`, `2h`, `daily`
+- `max_iterations`: defaults to `5` (override allowed)
+- `rollback`: `true`/`false`
+- `description`: free-form run description
+
+Scheduled runs are also supported for the same cadence options. Configure scheduled behavior with repo variables:
+
+- `AUTORESEARCH_SCHEDULE_CADENCE`: active schedule cadence (default `5m`)
+- `AUTORESEARCH_MAX_ITERATIONS`: max iterations per scheduled run (default `5`)
 
 ## Autoresearch Loop
 
