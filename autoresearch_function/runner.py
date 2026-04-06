@@ -18,7 +18,7 @@ def benchmark_target(payload: dict[str, object]) -> object:
     return candidate_portfolio_return_gross_net(**adapted)
 
 
-def format_summary(summary: dict[str, float | int]) -> str:
+def format_summary(summary: dict[str, object]) -> str:
     return "\n".join(
         [
             "---",
@@ -27,6 +27,7 @@ def format_summary(summary: dict[str, float | int]) -> str:
             f"peak_memory_kb:         {summary['peak_memory_kb']:.6f}",
             f"concurrency_ops_per_s:  {summary['concurrency_ops_per_s']:.6f}",
             f"production_readiness:   {summary['production_readiness']:.6f}",
+            f"readiness_source:       {summary.get('production_readiness_source', 'heuristic')}",
             f"overall_score:          {summary['overall_score']:.6f}",
             f"scenarios_passed:       {summary['scenarios_passed']}/{summary['scenario_count']}",
         ]

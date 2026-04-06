@@ -57,7 +57,14 @@ The bundled example uses a simple calculator-style function because you said you
 - `benchmark.concurrency_workers`: worker count for the threaded concurrency check
 - `score.weights`: weights used to combine the normalized metrics
 - `score.targets`: target values used for score normalization
-- `production_readiness`: lightweight static quality checks for the target function
+- `llm_judge`: optional LLM readiness judge settings (`provider`, `model`, `timeout_seconds`)
+
+LLM judge environment overrides:
+
+- `LLM_JUDGE_PROVIDER`: `auto`, `openai`, or `heuristic`
+- `LLM_JUDGE_MODEL`: model name (default `gpt-4.1-mini`)
+- `LLM_JUDGE_TIMEOUT_SECONDS`: API timeout in seconds
+- `OPENAI_API_KEY`: required when provider resolves to `openai`
 
 ## GitHub Actions
 

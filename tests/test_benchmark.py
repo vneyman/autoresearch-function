@@ -103,4 +103,9 @@ def test_runner_metrics_for_sample_function(tmp_path) -> None:
     assert result.peak_memory_kb >= 0.0
     assert result.concurrency_ops_per_s > 0.0
     assert 0.0 <= result.production_readiness <= 1.0
+    assert result.production_readiness_source in ("heuristic", "heuristic_fallback", "llm")
+    assert isinstance(result.production_readiness_breakdown, dict)
+    assert isinstance(result.production_readiness_rationale, str)
+    assert isinstance(result.judge_provider, str)
+    assert result.judge_error is None or isinstance(result.judge_error, str)
     assert result.overall_score > 0.0

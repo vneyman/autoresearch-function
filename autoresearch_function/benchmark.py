@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from autoresearch_function.readiness_judge import build_readiness_judge
+
 
 @dataclass(frozen=True)
 class Scenario:
@@ -30,6 +32,9 @@ class BenchmarkConfig:
     concurrency_repeats: int
     score_weights: dict[str, float]
     score_targets: dict[str, float]
+    llm_provider: str | None = None
+    llm_model: str | None = None
+    llm_timeout_seconds: float = 15.0
 
 
 @dataclass(frozen=True)
@@ -39,6 +44,13 @@ class BenchmarkResult:
     peak_memory_kb: float
     concurrency_ops_per_s: float
     production_readiness: float
+    production_readiness_source: str
+    production_readiness_breakdown: dict[str, float]
+    production_readiness_rationale: str
+    judge_provider: str
+    judge_model: str | None
+    judge_latency_ms: float | None
+    judge_error: str | None
     overall_score: float
     scenarios_passed: int
     scenario_count: int
@@ -50,6 +62,13 @@ class BenchmarkResult:
             "peak_memory_kb": self.peak_memory_kb,
             "concurrency_ops_per_s": self.concurrency_ops_per_s,
             "production_readiness": self.production_readiness,
+            "production_readiness_source": self.production_readiness_source,
+            "production_readiness_breakdown": self.production_readiness_breakdown,
+            "production_readiness_rationale": self.production_readiness_rationale,
+            "judge_provider": self.judge_provider,
+            "judge_model": self.judge_model,
+            "judge_latency_ms": self.judge_latency_ms,
+            "judge_error": self.judge_error,
             "overall_score": self.overall_score,
             "scenarios_passed": self.scenarios_passed,
             "scenario_count": self.scenario_count,
@@ -63,6 +82,7 @@ def load_scenarios(path: str | Path) -> list[Scenario]:
 
 def load_config(path: str | Path) -> BenchmarkConfig:
     raw = json.loads(Path(path).read_text())
+    llm_judge = raw.get("llm_judge", {})
     return BenchmarkConfig(
         tolerance=float(raw["correctness"]["tolerance"]),
         warmup_runs=int(raw["benchmark"]["warmup_runs"]),
@@ -71,6 +91,9 @@ def load_config(path: str | Path) -> BenchmarkConfig:
         concurrency_repeats=int(raw["benchmark"]["concurrency_repeats"]),
         score_weights=dict(raw["score"]["weights"]),
         score_targets=dict(raw["score"]["targets"]),
+        llm_provider=str(llm_judge.get("provider", "auto")),
+        llm_model=str(llm_judge.get("model", "gpt-4.1-mini")),
+        llm_timeout_seconds=float(llm_judge.get("timeout_seconds", 15.0)),
     )
 
 
@@ -271,7 +294,14 @@ def run_benchmark(
         config.concurrency_workers,
         config.concurrency_repeats,
     )
-    production_readiness = evaluate_production_readiness(func, readiness_scenarios)
+    judge = build_readiness_judge(
+        evaluate_production_readiness,
+        provider=config.llm_provider,
+        model=config.llm_model,
+        timeout_seconds=config.llm_timeout_seconds,
+    )
+    judgment = judge.evaluate(func, readiness_scenarios)
+    production_readiness = judgment.score
     overall_score = compute_overall_score(
         correctness,
         latency_ms,
@@ -287,6 +317,13 @@ def run_benchmark(
         peak_memory_kb=memory_kb,
         concurrency_ops_per_s=concurrency_ops_per_s,
         production_readiness=production_readiness,
+        production_readiness_source=judgment.source,
+        production_readiness_breakdown=judgment.breakdown,
+        production_readiness_rationale=judgment.rationale,
+        judge_provider=judgment.provider,
+        judge_model=judgment.model,
+        judge_latency_ms=judgment.latency_ms,
+        judge_error=judgment.error,
         overall_score=overall_score,
         scenarios_passed=passed,
         scenario_count=len(correctness_scenarios),

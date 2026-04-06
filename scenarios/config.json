@@ -21,5 +21,10 @@
       "memory_kb": 16.0,
       "concurrency_ops_per_s": 10000.0
     }
+  },
+  "llm_judge": {
+    "provider": "auto",
+    "model": "gpt-4.1-mini",
+    "timeout_seconds": 15
   }
 }
