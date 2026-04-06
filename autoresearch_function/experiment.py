@@ -28,6 +28,13 @@ class Summary:
     peak_memory_kb: float
     concurrency_ops_per_s: float
     production_readiness: float
+    production_readiness_source: str
+    production_readiness_breakdown: dict[str, float]
+    production_readiness_rationale: str
+    judge_provider: str
+    judge_model: str | None
+    judge_latency_ms: float | None
+    judge_error: str | None
 
 
 def load_config(path: str | Path) -> ExperimentConfig:
@@ -53,6 +60,26 @@ def load_config(path: str | Path) -> ExperimentConfig:
 
 def load_summary(path: str | Path) -> Summary:
     raw = json.loads(Path(path).read_text())
+    def _float(key: str, default: float | None = None) -> float | None:
+        value = raw.get(key)
+        if value is None:
+            return default
+        return float(value)
+
+    def _str(key: str, default: str) -> str:
+        value = raw.get(key)
+        if value is None:
+            return default
+        return str(value)
+
+    breakdown_raw = raw.get("production_readiness_breakdown")
+    if isinstance(breakdown_raw, dict):
+        breakdown: dict[str, float] = {
+            str(k): float(v) for k, v in breakdown_raw.items() if v is not None
+        }
+    else:
+        breakdown = {}
+
     return Summary(
         overall_score=float(raw["overall_score"]),
         correctness=float(raw["correctness"]),
@@ -60,6 +87,13 @@ def load_summary(path: str | Path) -> Summary:
         peak_memory_kb=float(raw["peak_memory_kb"]),
         concurrency_ops_per_s=float(raw["concurrency_ops_per_s"]),
         production_readiness=float(raw["production_readiness"]),
+        production_readiness_source=_str("production_readiness_source", "heuristic"),
+        production_readiness_breakdown=breakdown,
+        production_readiness_rationale=_str("production_readiness_rationale", ""),
+        judge_provider=_str("judge_provider", "heuristic"),
+        judge_model=raw.get("judge_model"),
+        judge_latency_ms=_float("judge_latency_ms"),
+        judge_error=raw.get("judge_error"),
     )
 
 
@@ -88,6 +122,22 @@ def is_improvement(metric_direction: str, candidate: float, best: float | None) 
     return candidate > best
 
 
+def _sanitize_readiness_rationale(rationale: str) -> str:
+    return " ".join(line.strip() for line in rationale.splitlines() if line.strip())
+
+
+def _describe_readiness(summary: Summary) -> str:
+    rationale = _sanitize_readiness_rationale(summary.production_readiness_rationale)
+    if not rationale:
+        rationale = "no comment"
+    provider = summary.judge_provider
+    model_info = f"/{summary.judge_model}" if summary.judge_model else ""
+    return (
+        f"{summary.production_readiness_source} {summary.production_readiness:.3f}"
+        f" ({provider}{model_info}) – {rationale}"
+    )
+
+
 def append_result(results_path: str | Path, commit: str, summary: Summary | None, status: str, description: str) -> None:
     metric = "N/A"
     correctness = "N/A"
@@ -95,6 +145,7 @@ def append_result(results_path: str | Path, commit: str, summary: Summary | None
     peak_memory = "N/A"
     concurrency = "N/A"
     readiness = "N/A"
+    readiness_note = ""
     if summary is not None:
         metric = f"{summary.overall_score:.6f}"
         correctness = f"{summary.correctness:.6f}"
@@ -102,6 +153,11 @@ def append_result(results_path: str | Path, commit: str, summary: Summary | None
         peak_memory = f"{summary.peak_memory_kb:.6f}"
         concurrency = f"{summary.concurrency_ops_per_s:.6f}"
         readiness = f"{summary.production_readiness:.6f}"
+        readiness_note = _describe_readiness(summary)
+
+    final_description = description
+    if readiness_note:
+        final_description = f"{description} | readiness: {readiness_note}"
 
     with Path(results_path).open("a") as handle:
         handle.write(
