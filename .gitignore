@@ -5,3 +5,5 @@ __pycache__/
 benchmark-summary.json
 .autoresearch/**/run.log
 .autoresearch/**/results.tsv
+!.autoresearch/engineering/portfolio-return/run.log
+!.autoresearch/engineering/portfolio-return/results.tsv

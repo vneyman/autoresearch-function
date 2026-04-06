@@ -1,0 +1,6 @@
+commit	overall_score	correctness	median_latency_ms	peak_memory_kb	concurrency_ops_per_s	production_readiness	status	description
+nogit	0.940000	1.000000	0.001623	0.609375	110479.324656	0.600000	keep	baseline
+df1a66b	0.940000	1.000000	0.001533	0.609375	99135.487442	0.600000	discard	iter1 inline month arithmetic (no improvement over 0.940000)
+df1a66b	0.940000	1.000000	0.001513	0.609375	89760.400780	0.600000	discard	iter2 branch expression for nav denominator (no improvement over 0.940000)
+df1a66b	0.940000	1.000000	0.001543	0.609375	110252.308579	0.600000	discard	iter3 compact fee calculation (no improvement over 0.940000)
+df1a66b	10.241677	1.000000	0.001493	0.609375	110224.296822	0.800000	keep	baseline after uncapped scoring and readiness scenarios
