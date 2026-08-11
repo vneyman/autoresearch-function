@@ -1,9 +1,9 @@
 ---
 correctness:            1.000000
-median_latency_ms:      0.001989
+median_latency_ms:      0.003135
 peak_memory_kb:         0.679688
-concurrency_ops_per_s:  78774.784269
+concurrency_ops_per_s:  54751.889078
 production_readiness:   0.800000
 readiness_source:       heuristic
-overall_score:          8.080952
+overall_score:          6.090558
 scenarios_passed:       2/2
