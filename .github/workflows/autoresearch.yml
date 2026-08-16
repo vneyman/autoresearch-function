@@ -26,12 +26,6 @@ on:
         description: Roll back the last commit on discard/crash
         required: false
         default: "false"
-  schedule:
-    - cron: "*/5 * * * *"
-    - cron: "*/30 * * * *"
-    - cron: "0 * * * *"
-    - cron: "0 */2 * * *"
-    - cron: "0 0 * * *"
 
 permissions:
   contents: write
